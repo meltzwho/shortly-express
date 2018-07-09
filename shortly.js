@@ -2,7 +2,13 @@ var express = require('express');
 var util = require('./lib/utility');
 var partials = require('express-partials');
 var bodyParser = require('body-parser');
-
+var session = require('express-session');
+// bcrypt.hash(myPlaintextPassword, saltRounds, function(err, hash) {
+//   // Store hash in your password DB.
+// });
+// bcrypt.compare(myPlaintextPassword, hash, function(err, res) {
+//     // res == true
+// });
 
 var db = require('./app/config');
 var Users = require('./app/collections/users');
@@ -21,26 +27,41 @@ app.use(bodyParser.json());
 // Parse forms (signup/login)
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.static(__dirname + '/public'));
+app.use(session({secret: 'booga booga',cookie: {maxAge: 600000}}));
 
+//add authentication mdlwr
+app.get('/',
+function(req, res) {
+  if(req.session.username !== undefined){
+    res.render('index');
+  }else {
+    res.render('login');
+  }
+});
 
-app.get('/', 
+app.get('/create',
 function(req, res) {
   res.render('index');
 });
 
-app.get('/create', 
+app.get('/login',
 function(req, res) {
-  res.render('index');
+  res.render('login');
 });
 
-app.get('/links', 
+app.get('/signup',
+function(req, res) {
+  res.render('signup');
+});
+
+app.get('/links',
 function(req, res) {
   Links.reset().fetch().then(function(links) {
     res.status(200).send(links.models);
   });
 });
 
-app.post('/links', 
+app.post('/links',
 function(req, res) {
   var uri = req.body.url;
 
@@ -75,7 +96,28 @@ function(req, res) {
 /************************************************************/
 // Write your authentication routes here
 /************************************************************/
+app.post('/login',
+function(req, res) {
+  console.log('POST login');
+  db.knex
+  .from('users')
+  .select('username','password')
+  .where('username', req.body.username)
+  .then((results) =>{
+    if(results.length === 0){
+      res.render('signup');
+    }else {
+      //hash pw and check
+    }
+  });
+  //res.render('login');
+});
 
+app.post('/signup',
+function(req, res) {
+  console.log('POST signup');
+  //res.render('signup');
+});
 
 
 /************************************************************/
