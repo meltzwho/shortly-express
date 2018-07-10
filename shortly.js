@@ -3,6 +3,8 @@ var util = require('./lib/utility');
 var partials = require('express-partials');
 var bodyParser = require('body-parser');
 var session = require('express-session');
+var bcrypt = require('bcrypt-nodejs');
+
 // bcrypt.hash(myPlaintextPassword, saltRounds, function(err, hash) {
 //   // Store hash in your password DB.
 // });
@@ -27,25 +29,30 @@ app.use(bodyParser.json());
 // Parse forms (signup/login)
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.static(__dirname + '/public'));
-app.use(session({secret: 'booga booga',cookie: {maxAge: 600000}}));
+app.use(session({secret: 'booga booga',cookie: {maxAge: 60000}}));
 
-//add authentication mdlwr
-app.get('/',
-function(req, res) {
-  if(req.session.username !== undefined){
-    res.render('index');
-  }else {
-    res.render('login');
+var checkUser = (req, res, next) => {
+  if(req.session.id_user !== undefined){
+    next();
+  }else{
+    res.redirect('/login');
   }
+};
+
+//add authentication mdlwr new stuff
+app.get('/', checkUser,
+function(req, res) {
+  res.render('index');
 });
 
-app.get('/create',
+app.get('/create', checkUser,
 function(req, res) {
   res.render('index');
 });
 
 app.get('/login',
 function(req, res) {
+  req.session.destroy();
   res.render('login');
 });
 
@@ -56,9 +63,16 @@ function(req, res) {
 
 app.get('/links',
 function(req, res) {
-  Links.reset().fetch().then(function(links) {
-    res.status(200).send(links.models);
+  db.knex
+  .select()
+  .from('urls')
+  .where('id_user', req.session.id_user)
+  .then((results) => {
+    res.status(200).send(results);
   });
+  // Links.reset().fetch().then(function(links) {
+  //   res.status(200).send(links.models);
+  // });
 });
 
 app.post('/links',
@@ -70,7 +84,7 @@ function(req, res) {
     return res.sendStatus(404);
   }
 
-  new Link({ url: uri }).fetch().then(function(found) {
+  new Link({ url: uri, id_user: req.session.id_user }).fetch().then(function(found) {
     if (found) {
       res.status(200).send(found.attributes);
     } else {
@@ -83,7 +97,8 @@ function(req, res) {
         Links.create({
           url: uri,
           title: title,
-          baseUrl: req.headers.origin
+          baseUrl: req.headers.origin,
+          id_user: req.session.id_user
         })
         .then(function(newLink) {
           res.status(200).send(newLink);
@@ -98,24 +113,48 @@ function(req, res) {
 /************************************************************/
 app.post('/login',
 function(req, res) {
-  console.log('POST login');
   db.knex
+  .select('id_user','username','password')
   .from('users')
-  .select('username','password')
   .where('username', req.body.username)
-  .then((results) =>{
+  .then((results) => {
     if(results.length === 0){
       res.render('signup');
-    }else {
-      //hash pw and check
+    }else{
+      bcrypt.compare(req.body.password, results[0].password, (err, isMatch) => {
+        if(err){
+          console.error(err);
+          return;
+        }
+        if(isMatch){
+          util.genSession(req, res, results[0].id_user);
+        }else{
+          res.render('login');
+        }
+      });
     }
   });
-  //res.render('login');
 });
 
 app.post('/signup',
 function(req, res) {
-  console.log('POST signup');
+  bcrypt.hash(req.body.password,bcrypt.genSaltSync(10),null,
+  (err, hash) => {
+    if(err){
+      console.error(err);
+      return;
+    }
+    Users.create({
+      username: req.body.username,
+      password: hash
+    })
+    .then((newUser) => {
+      util.genSession(req, res, newUser.id);
+    })
+    .catch((err) => {
+      res.redirect('/signup');
+    })
+  });
   //res.render('signup');
 });
 
